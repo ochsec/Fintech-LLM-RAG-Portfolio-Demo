@@ -22,7 +22,7 @@ market data is EOD/daily-candle; the horizon is medium/long-term, not intraday.
 | Order flow | FastAPI → SQS (`order-intent-v1`, signed actor claims) → Java OMS → Postgres truth |
 | OMS | Java 21 + Spring Boot 3, SQS poller, mock fills at daily close |
 | Sessions | ElastiCache Redis only (ephemeral, JWT denylist, run-status) |
-| Deploy | CDK, one AWS account; deploy ↔ teardown per demo window (~$40-60/mo deployed, ≈$0 down) |
+| Deploy | Terraform (AWS provider), one account; deploy ↔ teardown per demo window (~$40-60/mo deployed, ≈$0 down) |
 
 ## Data plan (all free tiers, verified Oct 2026)
 
@@ -36,7 +36,7 @@ market data is EOD/daily-candle; the horizon is medium/long-term, not intraday.
 ## Repo layout (planned)
 
 `shared/contracts/` (order-intent schema) · `ingestion/` (python) · `api/` (FastAPI) ·
-`oms-java/` (Spring Boot) · `frontend/` (React) · `infra/` (CDK) · `docs/`.
+`oms-java/` (Spring Boot) · `frontend/` (React) · `infra/` (Terraform) · `docs/`.
 
 ## Disclosures
 

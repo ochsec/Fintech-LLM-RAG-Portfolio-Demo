@@ -6,7 +6,7 @@
 
 **Architecture:** Batch, daily-candle shaped — no streaming market data anywhere. One Postgres (Aurora Serverless v2 PostgreSQL in-VPC, pgvector 0.8.x; 9,193-symbol universe seeded with 10-year bars) holds market data, rag corpus, and portfolio state. One SQS queue carries order intents from FastAPI to the Java OMS. ElastiCache Redis holds session/ephemeral state only. React+Vite static site on S3/CloudFront talks only to FastAPI; LLM credentials never leave the API tier.
 
-**Tech stack:** Python 3.12 (FastAPI, boto3, asyncpg, httpx), Java 21 + Spring Boot 3 (AWS SDK v2), React + Vite + TypeScript + recharts, Postgres 16 + pgvector, Redis, SQS, EventBridge Scheduler, CDK (Python), docker-compose for local dev parity.
+**Tech stack:** Python 3.12 (FastAPI, boto3, asyncpg, httpx), Java 21 + Spring Boot 3 (AWS SDK v2), React + Vite + TypeScript + recharts, Postgres 16 + pgvector, Redis, SQS, EventBridge Scheduler, Terraform (AWS provider), docker-compose for local dev parity.
 
 ---
 
@@ -88,9 +88,11 @@ fintech-llm-rag-demo/
 │   ├── package.json, vite.config.ts, index.html
 │   └── src/{App.tsx,api/client.ts,pages/{CreatePortfolioPage.tsx,PortfolioDetailPage.tsx},
 │           components/{HoldingsTable,PnlChart,TransactionHistory,UpdateRunLog,InsightsPanel}.tsx}
-├── infra/                        # CDK python app
-│   ├── app.py, cdk.json
-│   └── stacks/{network_stack.py,data_stack.py,service_stack.py}
+├── infra/                        # Terraform (AWS provider, one root module)
+│   ├── versions.tf               # provider pin, backend (local state)
+│   ├── variables.tf, outputs.tf, terraform.tfvars.example
+│   ├── network.tf, data.tf, service.tf   # 3 coherent files, one state
+│   └── .gitignore                # tfstate + .terraform/ never committed
 └── docs/{runbook.md,demo-script.md,disclosures.md}
 ```
 
@@ -230,12 +232,12 @@ Each task: write failing test → minimal impl → pass → commit. Commands fro
 26. `PortfolioDetailPage`: HoldingsTable, PnlChart (recharts, equity curve from daily_bars + positions), TransactionHistory, UpdateRunLog (rationale JSON → human cards), "Force update" button, InsightsPanel with citations. Poll run status every 5s while EXECUTING.
 27. Empty/error states (PENDING_BUILD spinner, REJECTED orders shown in red with reason).
 
-### Phase 5 — AWS single-account deploy (5-6 tasks, CDK)
-28. `network_stack.py`: VPC 2 AZs, public subnets (ALB), private (ECS+Aurora+Redis), SGs (ALB→api:8000, api→oms:8080, api/oms→pg:5432 restored, api/oms→redis:6379; only ALB public). **OpenRouter is the one external SaaS** (egress to api.openrouter.ai; Bedrock/Aurora/SQS all in-account).
-29. `data_stack.py`: **Aurora Serverless v2 PostgreSQL cluster (Aurora Standard, us-east-1, user decision — §14)** — NOT Neon/RDS-provisioned; ServerlessV2ScalingConfig min 0 / max 2-4 ACUs; pgvector enabled at init + job running 0001_init.sql (10-year seed default); ElastiCache Redis (cache.t3.micro or serverless small), SQS standard queue + DLQ, Secrets Manager (Aurora creds, OpenRouter key, Finnhub/Massive tokens), SSM parameter for embed model id.
-30. `service_stack.py`: 2× ECR repos; ECS Fargate api + oms tasks (0.25 vCPU/0.5 GB), ALB → api only; IAM: api task role (sqs:SendMessage, bedrock:Invoke*, secrets get), oms task role (sqs:Receive+Delete, pg via SG), EventBridge Scheduler rule → managed HTTPS target hitting `POST /admin/run-updates` w/ API key from Secrets Manager; S3 + CloudFront (OAC) for frontend build output.
-31. CDK deploy + initdb on Aurora + ECR image pushes (Make targets `deploy`, `migrate`, `seed-aws`). Verify checklist in `docs/runbook.md`: health via ALB endpoint, create portfolio end-to-end in prod, EventBridge fires (set 1-off schedule, watch CloudWatch logs).
-32. `docs/demo-script.md` + `disclosures.md`: paper-trading note, free-tier data sources + personal-use labels, mock-fill note. Teardown: `make destroy` (single stack delete + ECR/S3 cleanup; Aurora final snapshot retained ~$0). Keep the account bill at demo-only level (**~$40-60/mo including Aurora while deployed, ≈$0 idle-state after teardown**; verify at deploy).
+### Phase 5 — AWS single-account deploy (5-6 tasks, Terraform)
+28. `network.tf`: VPC 2 AZs, public subnets (ALB), private (ECS+Aurora+Redis), SGs (ALB→api:8000, api→oms:8080, api/oms→pg:5432 restored, api/oms→redis:6379; only ALB public). **OpenRouter is the one external SaaS** (egress to api.openrouter.ai; Bedrock/Aurora/SQS all in-account).
+29. `data.tf`: **Aurora Serverless v2 PostgreSQL cluster (Aurora Standard, us-east-1, user decision — §14)** — NOT Neon/RDS-provisioned; ServerlessV2ScalingConfig min 0 / max 2-4 ACUs; pgvector enabled at init + job running 0001_init.sql (10-year seed default); ElastiCache Redis (cache.t3.micro or serverless small), SQS standard queue + DLQ, Secrets Manager (Aurora creds, OpenRouter key, Finnhub/Massive tokens), SSM parameter for embed model id.
+30. `service.tf`: 2× ECR repos; ECS Fargate api + oms tasks (0.25 vCPU/0.5 GB), ALB → api only; IAM: api task role (sqs:SendMessage, bedrock:Invoke*, secrets get), oms task role (sqs:Receive+Delete, pg via SG), EventBridge Scheduler rule → managed HTTPS target hitting `POST /admin/run-updates` w/ API key from Secrets Manager; S3 + CloudFront (OAC) for frontend build output.
+31. Terraform apply + initdb on Aurora + ECR image pushes (Make targets `plan/apply`, `migrate`, `seed-aws`). Verify checklist in `docs/runbook.md`: health via ALB endpoint, create portfolio end-to-end in prod, EventBridge fires (set 1-off schedule, watch CloudWatch logs).
+32. `docs/demo-script.md` + `disclosures.md`: paper-trading note, free-tier data sources + personal-use labels, mock-fill note. Teardown: `make destroy` (terraform destroy + ECR/S3 cleanup; Aurora final snapshot retained ~$0). Keep the account bill at demo-only level (**~$40-60/mo including Aurora while deployed, ≈$0 idle-state after teardown**; verify at deploy).
 
 ### Phase 6 — Hardening (stretch, post-demo-v1)
 - Production-path auth swap to Cognito (JWT §12 → Cognito mapping documented), MF transcripts ingestion, FRED regime gating in prompt, universe config UI, paid-Massive swap runbook page, always-on DB revisit (Aurora always-on is a different cost conversation than demo-window).

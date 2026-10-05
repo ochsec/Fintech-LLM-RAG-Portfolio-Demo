@@ -30,8 +30,12 @@ dist/
 .env.*
 !.env.example
 
-# Terraform/CDK
-cdk.out/
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
 *.swp
 
 # Local data dumps (market data stays outside git)
