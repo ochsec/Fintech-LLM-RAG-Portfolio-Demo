@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+
+# Java
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+dist/
+.vite/
+*.log
+
+# Environment / secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Terraform/CDK
+cdk.out/
+*.swp
+
+# Local data dumps (market data stays outside git)
+*.duckdb
+*.sqlite
+*.db
+data/
+!data/.gitkeep
+
+# Hermes
+.hermes/cache/
