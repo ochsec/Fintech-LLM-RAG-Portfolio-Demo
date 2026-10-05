@@ -9,6 +9,9 @@ market data is EOD/daily-candle; the horizon is medium/long-term, not intraday.
 [`.hermes/plans/2026-10-05_114800-themed-llm-rag-portfolio-demo.md`](.hermes/plans/2026-10-05_114800-themed-llm-rag-portfolio-demo.md)
 (28 numbered tasks across 6 phases, all open decisions recorded with their rationale).
 
+See [`docs/data-plan.md`](docs/data-plan.md) for the verified data layer
+(2026-10-05): pipelines-first RAG metrics plan. Load-bearing deltas vs the plan:
+
 ## Architecture (decided)
 
 | Concern | Choice |
@@ -24,19 +27,23 @@ market data is EOD/daily-candle; the horizon is medium/long-term, not intraday.
 | Sessions | ElastiCache Redis only (ephemeral, JWT denylist, run-status) |
 | Deploy | Terraform (AWS provider), one account; deploy ↔ teardown per demo window (~$40-60/mo deployed, ≈$0 down) |
 
-## Data plan (all free tiers, verified Oct 2026)
+## Data plan (all free tiers, verified Oct 2026 — superseded: see docs/data-plan.md)
 
 - **Seed:** Stooq daily bundle — one ~515 MB US zip; 4,661 NASDAQ + 4,532 NYSE stocks ≈ **9,193 tickers with 10-year daily bars**
 - **Nightly incremental:** Massive (ex-Polygon) free tier for active subset (portfolio members + top-50), 5 calls/min throttled
-- **Weekly tail refresh:** Stooq bundle re-pull (T+2-3 session freshness for non-portfolio names)
+- **Weekly tail refresh:** manual Stooq bundle (site denies scripted downloads — CAPTCHA+ticket flow) or yfinance tail sweep; T+2-3 session freshness for non-portfolio names
 - **RAG corpus:** SEC EDGAR (10-K/10-Q, XBRL), Finnhub company news (free, 1 yr); transcripts via Motley Fool archive
+- **Statements (XBRL):** SEC frames/companyfacts — no key, license-clean; point-in-time facts keyed by `filed_at`
+- **Ratings/consensus:** free tiers carry only **snapshots** (Yahoo snapshot w/ Finnhub 4Q EPS surprises) — consensus/upgrade *history* is paid-only everywhere; disclosed gap
 - **Macro:** FRED (rates, CPI) for regime context
 - Universes/symbols truth: NasdaqTrader symbol directory (anonymous FTP)
 
 ## Repo layout (planned)
 
 `shared/contracts/` (order-intent schema) · `ingestion/` (python) · `api/` (FastAPI) ·
-`oms-java/` (Spring Boot) · `frontend/` (React) · `infra/` (Terraform) · `docs/`.
+`oms-java/` (Spring Boot) · `frontend/` (React) · `infra/` (Terraform) · `docs/`
+(`data-plan.md` = verified source registry + pipeline jobs; `database_schemas.md`
+= schema incl. `fundamentals`/`analyst_ratings_daily`/`source_registry`).
 
 ## Disclosures
 

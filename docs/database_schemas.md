@@ -211,6 +211,70 @@ Notes / deltas vs plan §5: owner column is a real FK here; `trigger` renamed
 `created_at` added to runs. Builder service emits **delta** orders from
 `proposed` − current `oms.positions` (net-effect only, §6).
 
+## 5. v2 draft additions — RAG metrics layer (2026-10-05 evening)
+
+**Companion doc: [`docs/data-plan.md`](data-plan.md) (all sources verified live
+that day).** Statement facts come from SEC XBRL (`frames`/`companyfacts` — no
+key, license-clean), analyst consensus only exists as **snapshots** on free
+tiers, and every derived number carries the source it was computed from. Per
+`data-plan.md` §2: no free consensus/upgrade *history* exists anywhere — these
+tables hold snapshots with explicit `as_of`, and the join to daily bars is how
+the UI reconstructs a timeline honestly.
+
+```sql
+CREATE TABLE securities.fundamentals (          -- statement facts, point-in-time
+  symbol    TEXT NOT NULL,                      -- instruments(symbol), logical
+  concept   TEXT NOT NULL,                      -- us-gaap tag: 'Revenues', 'NetIncomeLoss', 'EarningsPerShareDiluted', ...
+  period_start DATE NOT NULL,
+  period_end   DATE NOT NULL,
+  val       NUMERIC(20,4) NOT NULL,             -- as-reported USD
+  filed_at  DATE NOT NULL,                      -- XBRL 'filed'; amended filings ADD rows, never rewrite
+  accession TEXT NOT NULL,                      -- EDGAR accession — the citation string
+  source    TEXT NOT NULL DEFAULT 'sec_xbrl',
+  PRIMARY KEY (symbol, concept, period_end, filed_at)
+);
+CREATE INDEX fundamentals_symbol_period ON securities.fundamentals (symbol, concept, period_end DESC);
+
+CREATE TABLE securities.analyst_ratings_daily ( -- consensus snapshot, not history
+  symbol        TEXT NOT NULL,
+  as_of         DATE NOT NULL,                  -- snapshot date
+  strong_buy    INTEGER, buy INTEGER, hold INTEGER, sell INTEGER, strong_sell INTEGER,
+  target_mean   NUMERIC(12,4), target_high NUMERIC(12,4), target_low NUMERIC(12,4),
+  eps_surprise_latest NUMERIC(10,6),            -- joins Finnhub free 4-quarter surprises
+  source        TEXT NOT NULL,                  -- 'yahoo_snapshot' | 'finnhub'
+  fetched_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (symbol, as_of, source)
+);
+
+CREATE TABLE securities.source_registry (       -- what every feed is allowed to be
+  source       TEXT PRIMARY KEY,                -- 'stooq' | 'massive' | 'finnhub' | 'sec_xbrl' | 'yahoo' | 'fred' | ...
+  role         TEXT NOT NULL,                   -- 'seed' | 'nightly_bars' | 'statements' | 'corpus' | 'macro' | ...
+  license_class TEXT NOT NULL,                  -- 'official' | 'personal_use' | 'tos_gray'
+  tier         TEXT,                            -- free-tier / plan name at verification time
+  verify_url   TEXT NOT NULL,                   -- vendor pricing/API page used for verification
+  last_verified DATE NOT NULL,                  -- re-check quarterly (data-plan §5)
+  notes        TEXT
+);
+
+ALTER TABLE securities.symbol_metrics
+  ADD COLUMN net_margin      NUMERIC(10,6),     -- from fundamentals
+  ADD COLUMN revenue_cagr_3y NUMERIC(10,6),
+  ADD COLUMN drawdown_12m    NUMERIC(10,6);
+```
+
+Notes:
+- `fundamentals` PK includes `filed_at`: restatements/amendments are appended as
+  new point-in-time rows; queries default to "latest filed ≤ as-of date".
+- `corpus_chunks.source` enum expands beyond §1's comment:
+  `edgar_10k|edgar_10q|finnhub_news|transcript|fool_transcript` — section labels
+  gain `prepared_remarks` alongside `qa`.
+- `source_registry` feeds the in-app data-sources footer and the quarterly
+  re-verification routine (`data-plan.md` §5) — disclosure as a table, not a
+  one-off sentence.
+- Ratings-history vendors (Finnhub premium, Massive Financials $29/mo) plug in
+  behind the same `MarketDataProvider` adapter; schema needs no rework if a paid
+  tier is ever added.
+
 ---
 
 ## Cross-schema reference map
