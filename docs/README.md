@@ -7,6 +7,7 @@ Per the implementation plan's repo layout. Planned contents (Phase 5, tasks 31-3
 - `demo-script.md` — the walkthrough used when presenting the demo.
 - `disclosures.md` — paper-trading simulation note, mock fills at daily close,
   free-tier/personal-use data source labels shown in the app footer.
+- `database_schemas.md` — draft (`securities`/`accounts`/`oms`/`portfolios` schemas).
 
 Additional docs as the build produces them (API contract exports, provider swap notes,
 etc.) get indexed here.
